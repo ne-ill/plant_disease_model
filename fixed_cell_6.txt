@@ -1,0 +1,234 @@
+# ==================================================
+# CELL 6: COMPLETE AUTOMATED TRAINING (FIXED)
+# 🚀 RUN THIS AND CLOSE YOUR LAPTOP!
+# ==================================================
+
+import time
+import shutil
+import os
+import random
+from pathlib import Path
+from datetime import datetime
+
+print("=" * 70)
+print("🤖 AUTOMATED PLANT DISEASE TRAINING PIPELINE")
+print("=" * 70)
+print(f"⏰ Started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+print("💡 You can close your laptop after this cell starts running!")
+print("=" * 70)
+
+# ============================================
+# STEP 1: Download Dataset
+# ============================================
+
+print("\n📥 STEP 1/6: Downloading PlantVillage dataset...")
+print("   (54,000 images, ~6 GB, takes 5-10 minutes)")
+
+if not os.path.exists('/content/plantdisease.zip'):
+    !kaggle datasets download -d emmarex/plantdisease
+    print("✅ Download complete!")
+else:
+    print("✅ Dataset already downloaded!")
+
+# ============================================
+# STEP 2: Extract Dataset
+# ============================================
+
+print("\n📦 STEP 2/6: Extracting dataset...")
+
+if not os.path.exists('/content/data/PlantVillage'):
+    !unzip -q /content/plantdisease.zip -d /content/data
+    print("✅ Extraction complete!")
+else:
+    print("✅ Dataset already extracted!")
+
+# ============================================
+# STEP 3: Organize Data (Train/Val Split)
+# ============================================
+
+print("\n📊 STEP 3/6: Organizing into train/val split (80/20)...")
+
+def organize_dataset():
+    source = Path("/content/data/PlantVillage")
+    train_dir = Path("/content/data/train")
+    val_dir = Path("/content/data/val")
+
+    if train_dir.exists() and val_dir.exists():
+        train_count = len(list(train_dir.glob('*/*.jpg')))
+        val_count = len(list(val_dir.glob('*/*.jpg')))
+        if train_count > 0 and val_count > 0:
+            print("✅ Dataset already organized!")
+            print(f"   Training images: {train_count}")
+            print(f"   Validation images: {val_count}")
+            return
+
+    train_dir.mkdir(parents=True, exist_ok=True)
+    val_dir.mkdir(parents=True, exist_ok=True)
+
+    for class_dir in source.iterdir():
+        if class_dir.is_dir():
+            class_name = class_dir.name
+            (train_dir / class_name).mkdir(exist_ok=True)
+            (val_dir / class_name).mkdir(exist_ok=True)
+
+            images = list(class_dir.glob("*.jpg")) + list(class_dir.glob("*.JPG"))
+            random.shuffle(images)
+
+            split_idx = int(len(images) * 0.8)
+            train_images = images[:split_idx]
+            val_images = images[split_idx:]
+
+            for img in train_images:
+                shutil.copy(img, train_dir / class_name / img.name)
+            for img in val_images:
+                shutil.copy(img, val_dir / class_name / img.name)
+
+            print(f"  ✓ {class_name}: {len(train_images)} train, {len(val_images)} val")
+
+    train_count = len(list(train_dir.glob('*/*.jpg')))
+    val_count = len(list(val_dir.glob('*/*.jpg')))
+
+    print(f"\n✅ Organization complete!")
+    print(f"   Training images: {train_count}")
+    print(f"   Validation images: {val_count}")
+
+organize_dataset()
+
+# ============================================
+# STEP 4: Setup Model
+# ============================================
+
+print("\n🏗️ STEP 4/6: Building model architecture...")
+
+from model import PlantDiseaseModel
+
+# Auto-detect number of classes from dataset
+train_path = '/content/data/train'
+num_classes = len([d for d in os.listdir(train_path) if os.path.isdir(os.path.join(train_path, d))])
+print(f"🔍 Auto-detected: {num_classes} classes in dataset")
+
+model = PlantDiseaseModel(num_classes=num_classes, img_size=128)
+model.build_model()
+
+print("✅ Model created!")
+print(f"   Input size: 128x128x3")
+print(f"   Output classes: {num_classes}")
+print(f"   Parameters: ~1.5M")
+
+# Create data generators
+print("\n📊 Creating data generators...")
+train_gen, val_gen = model.create_data_generators(
+    '/content/data/train',
+    '/content/data/val',
+    batch_size=32
+)
+
+print(f"✅ Data generators ready!")
+print(f"   Training batches: {len(train_gen)}")
+print(f"   Validation batches: {len(val_gen)}")
+
+# ============================================
+# STEP 5: TRAIN MODEL (2-4 hours)
+# ============================================
+
+print("\n" + "=" * 70)
+print("🚀 STEP 5/6: TRAINING STARTED!")
+print("=" * 70)
+print("⏰ Estimated time: 2-4 hours")
+print("💤 Close your laptop now - training continues in Google's cloud")
+print("📱 Check progress anytime at: https://colab.research.google.com")
+print("=" * 70 + "\n")
+
+start_time = time.time()
+
+# Train the model
+history = model.train(train_gen, val_gen, epochs=20)
+
+training_time = (time.time() - start_time) / 3600  # Convert to hours
+
+# ============================================
+# STEP 6: Save Model
+# ============================================
+
+print("\n💾 STEP 6/6: Saving model...")
+
+# Save locally first
+model.save_model('plant_disease_model.h5')
+
+# Generate filename with timestamp
+timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+drive_path = f"/content/drive/MyDrive/plant_disease_models/model_{timestamp}.h5"
+
+# Copy to Google Drive
+shutil.copy('plant_disease_model.h5', drive_path)
+
+# Also save as "latest" for easy finding
+latest_path = "/content/drive/MyDrive/plant_disease_models/latest_model.h5"
+shutil.copy('plant_disease_model.h5', latest_path)
+
+print(f"✅ Model saved to Google Drive!")
+print(f"   Timestamped: model_{timestamp}.h5")
+print(f"   Latest: latest_model.h5")
+
+# Save training history
+history_data = {
+    'timestamp': timestamp,
+    'training_time_hours': round(training_time, 2),
+    'num_classes': num_classes,
+    'final_train_accuracy': float(history.history['accuracy'][-1]),
+    'final_val_accuracy': float(history.history['val_accuracy'][-1]),
+    'final_train_loss': float(history.history['loss'][-1]),
+    'final_val_loss': float(history.history['val_loss'][-1]),
+    'epochs': 20,
+    'accuracy_history': [float(x) for x in history.history['accuracy']],
+    'val_accuracy_history': [float(x) for x in history.history['val_accuracy']]
+}
+
+import json
+history_path = f"/content/drive/MyDrive/plant_disease_models/training_history_{timestamp}.json"
+with open(history_path, 'w') as f:
+    json.dump(history_data, f, indent=2)
+
+print(f"✅ Training history saved!")
+
+# ============================================
+# FINAL RESULTS
+# ============================================
+
+print("\n" + "=" * 70)
+print("🎉 TRAINING COMPLETE!")
+print("=" * 70)
+print(f"⏱️  Total training time: {training_time:.2f} hours")
+print(f"📊 Classes trained: {num_classes}")
+print(f"📊 Final training accuracy: {history.history['accuracy'][-1]*100:.2f}%")
+print(f"📊 Final validation accuracy: {history.history['val_accuracy'][-1]*100:.2f}%")
+print(f"💾 Model size: ~18 MB")
+print("=" * 70)
+
+# Test prediction
+print("\n🧪 Testing model on sample image...")
+test_imgs = list(Path('/content/data/val').glob('*/*.jpg'))
+if test_imgs:
+    test_img = str(test_imgs[0])
+    disease, confidence = model.predict_image(test_img, list(train_gen.class_indices.keys()))
+    print(f"   Sample prediction: {disease}")
+    print(f"   Confidence: {confidence*100:.2f}%")
+
+# ============================================
+# DOWNLOAD INSTRUCTIONS
+# ============================================
+
+print("\n" + "=" * 70)
+print("📥 HOW TO GET YOUR MODEL:")
+print("=" * 70)
+print("Option 1 - From Google Drive (Recommended):")
+print("   1. Open: https://drive.google.com")
+print("   2. Go to: plant_disease_models folder")
+print("   3. Download: latest_model.h5 (18 MB)")
+print("")
+print("Option 2 - Direct from Colab:")
+print("   Run Cell 7 below to download directly")
+print("=" * 70)
+
+print("\n✅ Your trained AI model is ready for your web app!")
+print(f"🎯 Completed at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
